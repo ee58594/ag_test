@@ -1,5 +1,11 @@
 # PDFTranslate — PDF 翻译网站
 
+[![🌐 Live Demo](https://img.shields.io/badge/🌐_Live_Demo-GitHub_Pages-4F46E5?style=for-the-badge&logo=github)](https://ee58594.github.io/ag_test/)
+[![CI](https://github.com/ee58594/ag_test/actions/workflows/ci.yml/badge.svg)](https://github.com/ee58594/ag_test/actions/workflows/ci.yml)
+[![Deploy to Pages](https://github.com/ee58594/ag_test/actions/workflows/pages.yml/badge.svg)](https://github.com/ee58594/ag_test/actions/workflows/pages.yml)
+
+> **🔗 在线访问地址：[https://ee58594.github.io/ag_test/](https://ee58594.github.io/ag_test/)**
+
 一个支持完整翻译工作流的 PDF 翻译网站 Demo。后端为虚拟模拟服务，前端展示完整上传→翻译→下载流程。  
 前端**无需后端**即可独立运行（自动切换为浏览器内模拟模式），可直接部署到 **GitHub Pages**。
 
