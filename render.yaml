@@ -1,0 +1,17 @@
+# Render IaC — https://render.com/docs/yaml-spec
+# Deploying this file automatically provisions the backend web service on Render.
+# Connect your GitHub repo in the Render dashboard and it will use this config.
+
+services:
+  - type: web
+    name: pdf-translate-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/languages
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
