@@ -1,47 +1,35 @@
-# PDFTranslate — PDF 翻译网站
+# AlgoManager · 算法项目智能管理平台
 
-[![🌐 Live Demo](https://img.shields.io/badge/🌐_Live_Demo-GitHub_Pages-4F46E5?style=for-the-badge&logo=github)](https://ee58594.github.io/ag_test/)
 [![CI](https://github.com/ee58594/ag_test/actions/workflows/ci.yml/badge.svg)](https://github.com/ee58594/ag_test/actions/workflows/ci.yml)
-[![Deploy to Pages](https://github.com/ee58594/ag_test/actions/workflows/pages.yml/badge.svg)](https://github.com/ee58594/ag_test/actions/workflows/pages.yml)
 
-> **🔗 在线访问地址：[https://ee58594.github.io/ag_test/](https://ee58594.github.io/ag_test/)**
+> 基于大模型能力的算法项目全生命周期管理平台，支持多 Agent 协作、迭代追踪与智能分析。
 
-一个支持完整翻译工作流的 PDF 翻译网站 Demo。后端为虚拟模拟服务，前端展示完整上传→翻译→下载流程。  
-前端**无需后端**即可独立运行（自动切换为浏览器内模拟模式），可直接部署到 **GitHub Pages**。
+## 产品概述
 
-## 功能特性
+AlgoManager 是一个面向算法/建模团队的项目管理工具，核心理念是通过多角色 AI Agent 协作，覆盖算法项目从立项到持续运营的完整生命周期。
 
-- 📄 拖拽 / 点击上传 PDF（最大 50 MB）
-- 🌍 10+ 种语言互译（中/英/日/韩/法/德/西/俄/阿/葡）
-- 📊 实时翻译进度：解析 → 提取文本 → 翻译引擎 → 重排版
-- ⬇️ 翻译完成后一键下载
-- 📱 响应式设计，支持移动端
-- 🚀 **GitHub Pages 一键部署**（无需服务器）
+### 六大 Agent 场景
 
-## 在线体验（GitHub Pages）
+| 场景 | 说明 | 参与 Agent |
+|------|------|-----------|
+| 🚀 **初始建模** | 给定输入数据，设计开发代码，获取回测结果 | 项目经理、数据分析师、建模工程师、质量评估师 |
+| 📊 **迭代优化分析** | 多维度分析建模结果，发现提升机会，制定优化计划 | 数据分析师、建模工程师、业务顾问 |
+| 🔍 **运营复盘** | 复盘近期运行情况，异常分析，根因定位，发现迭代机会 | 根因分析师、数据分析师、项目经理 |
+| 💼 **业务驱动优化** | 依据业务给定优化方向，数据探索与建模优化及回测 | 业务顾问、数据分析师、建模工程师、质量评估师 |
+| ❓ **业务问题分析** | 对业务方提出的疑问进行数据分析，解释具体原因 | 数据分析师、业务顾问 |
+| 📈 **监控大盘** | 制定预测异常关键指标，实时展示数据大盘 | 数据分析师、根因分析师 |
 
-> 推送到 `main` 分支后，GitHub Actions 自动部署到：
->
-> **https://ee58594.github.io/ag_test/**
+### 核心功能
 
-在 GitHub Pages 上，前端会自动切换为**浏览器内模拟模式**——无需任何后端服务，翻译流程完全在浏览器中模拟运行。
+- **项目全生命周期管理**：多项目并行管理，版本迭代追踪，指标趋势可视化
+- **多 Agent 协作**：6种角色（项目经理、数据分析师、建模工程师、业务顾问、质量评估师、根因分析师）在每个场景中按职责分工协作
+- **流式对话输出**：基于 SSE（Server-Sent Events）实现 Agent 对话的实时逐字渲染
+- **迭代历史追踪**：完整记录每次迭代的版本、指标、结论、代码片段，支持多维度筛选
+- **智能监控大盘**：品类级 MAPE 趋势监控，告警分级，异常根因联动分析
 
-## 自动部署说明
+## 快速启动
 
-### GitHub Actions 工作流
-
-| 文件 | 触发条件 | 作用 |
-|------|----------|------|
-| `.github/workflows/ci.yml` | 所有 push / PR | 安装依赖、语法检查、运行测试（Node 20 & 22） |
-| `.github/workflows/pages.yml` | push 到 `main` | 运行 CI → 将 `frontend/` 部署到 GitHub Pages |
-
-### 启用 GitHub Pages 步骤
-
-1. 进入仓库 **Settings → Pages**
-2. **Source** 选择 `GitHub Actions`
-3. 推送代码到 `main` 分支，工作流自动执行
-
-### 本地开发（带真实后端）
+### 本地开发
 
 ```bash
 # 安装后端依赖
@@ -57,53 +45,37 @@ open http://localhost:3001
 ### Docker 部署
 
 ```bash
-# 一键启动（使用 docker-compose）
 docker compose up -d
-
-# 浏览器访问
 open http://localhost:3001
 ```
-
-### Render 部署（云端 Node.js 后端）
-
-1. 在 [Render](https://render.com) 新建 Web Service，连接本仓库
-2. Render 会自动读取 `render.yaml` 配置并部署
-3. 部署完成后将 Render 服务 URL 更新到前端 `app.js` 的 `API_BASE` 即可接入真实后端
 
 ## 项目结构
 
 ```
-├── .github/
-│   └── workflows/
-│       ├── ci.yml          # CI：安装 + 语法检查 + 测试
-│       └── pages.yml       # CD：部署到 GitHub Pages
 ├── backend/
-│   ├── server.js           # Express 服务（虚拟翻译后端）
+│   ├── server.js          # Express 后端：API + Agent SSE 流
 │   ├── test/
-│   │   └── health.test.js  # 后端健康检查测试
 │   └── package.json
 ├── frontend/
-│   ├── index.html          # 页面结构
-│   ├── style.css           # 样式
-│   └── app.js              # 前端逻辑（含浏览器内 mock 模式）
-├── Dockerfile              # 容器化构建
-├── docker-compose.yml      # 本地一键启动
-└── render.yaml             # Render 云部署配置
+│   ├── index.html         # 侧边栏导航 + 多视图布局
+│   ├── style.css          # 现代化 UI 设计系统
+│   └── app.js             # 前端路由、视图渲染、SSE 消费
+├── Dockerfile
+├── docker-compose.yml
+└── render.yaml
 ```
 
-## API 接口（后端模式）
+## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/upload` | 上传 PDF，返回 `taskId` |
-| `GET`  | `/api/status/:taskId` | 轮询翻译进度 |
-| `GET`  | `/api/download/:taskId` | 下载译文 PDF |
-| `GET`  | `/api/languages` | 获取支持语言列表 |
-
-## 说明
-
-前端 `app.js` 在启动时尝试访问 `/api/languages`：
-- **成功** → 使用真实后端（本地开发或 Render 部署）
-- **失败** → 自动切换为浏览器内模拟模式（适用于 GitHub Pages）
-
-如需接入真实翻译 API（如 DeepL / Google Translate），只需替换 `backend/server.js` 中的 `simulateTranslation` 函数。
+| `GET`  | `/api/meta` | Agent 角色 & 场景元数据 |
+| `GET`  | `/api/dashboard` | 总览统计 |
+| `GET`  | `/api/projects` | 项目列表 |
+| `POST` | `/api/projects` | 创建项目 |
+| `GET`  | `/api/projects/:id` | 项目详情 |
+| `GET`  | `/api/projects/:id/iterations` | 迭代列表 |
+| `GET`  | `/api/projects/:id/metrics-history` | 指标历史（供图表） |
+| `POST` | `/api/agent/start` | 创建 Agent 流会话 |
+| `GET`  | `/api/agent/stream/:sessionId` | SSE 流式 Agent 对话 |
+| `GET`  | `/api/monitoring/:project_id` | 监控大盘数据 |

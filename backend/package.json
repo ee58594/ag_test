@@ -1,7 +1,7 @@
 {
-  "name": "pdf-translate-backend",
+  "name": "algo-manager-backend",
   "version": "1.0.0",
-  "description": "PDF Translation Website Backend",
+  "description": "AlgoManager - AI-Driven Algorithm Project Lifecycle Management Platform Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
