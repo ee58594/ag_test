@@ -100,7 +100,7 @@
           <span class="panel-title">各场景迭代分布</span>
         </div>
         <div class="panel-body">
-          <canvas id="scenarioChart" height="200"></canvas>
+          <div id="scenarioChart" style="height:220px;width:100%"></div>
         </div>
       </div>
       <div class="panel flex-1" id="panelRecentIter">
@@ -241,14 +241,28 @@
 <!-- ══════════════════════════════════════════════════════════
      SCRIPTS
 ═══════════════════════════════════════════════════════════ -->
-<!-- Chart.js CDN with fallback to in-browser mock -->
-<script>
-  window.CHART_LOADED = false;
-</script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
-        onload="window.CHART_LOADED = true;"
-        onerror="console.warn('Chart.js CDN failed, charts disabled')">
-</script>
+<!-- Apache ECharts 5 — rich interactive charts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"
+        onerror="console.warn('ECharts CDN failed')"></script>
+
+<!-- marked — production-grade Markdown parser (MIT) -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"
+        onerror="console.warn('marked CDN failed')"></script>
+
+<!-- highlight.js — syntax highlighting for 190+ languages (BSD-3) -->
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"
+        onerror="console.warn('highlight.js CDN failed')"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+
+<!-- DOMPurify — XSS sanitiser for untrusted HTML (Apache-2.0) -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"
+        onerror="console.warn('DOMPurify CDN failed')"></script>
+
 <script src="app.js"></script>
 </body>
 </html>

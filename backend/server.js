@@ -1,13 +1,25 @@
 'use strict';
 
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+const express  = require('express');
+const cors     = require('cors');
+const path     = require('path');
+const fs       = require('fs');
+const low      = require('lowdb');
+const FileSync = require('lowdb/adapters/FileSync');
 const { v4: uuidv4 } = require('uuid');
 const rateLimit = require('express-rate-limit');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3001;
+
+// ─────────────────────────────────────────────────────────────
+// Persistent Store (lowdb — JSON flat-file)
+// ─────────────────────────────────────────────────────────────
+
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = low(new FileSync(path.join(DATA_DIR, 'db.json')));
 
 app.use(cors());
 app.use(express.json());
@@ -36,10 +48,10 @@ const SCENARIOS = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Mock Data Store
+// Seed Data (used only when db.json is empty)
 // ─────────────────────────────────────────────────────────────
 
-const projects = {
+const SEED_PROJECTS = {
   proj_001: {
     id: 'proj_001',
     name: '销量预测模型',
@@ -87,7 +99,7 @@ const projects = {
   },
 };
 
-const iterations = {
+const SEED_ITERATIONS = {
   // ── proj_001 ──────────────────────────────────────────────
   iter_001: {
     id: 'iter_001', project_id: 'proj_001', version: 'v1.0', scenario: 1,
@@ -233,7 +245,17 @@ const iterations = {
   },
 };
 
-// Runtime: active agent streaming sessions
+// ─────────────────────────────────────────────────────────────
+// Bootstrap lowdb with seed data
+// ─────────────────────────────────────────────────────────────
+
+db.defaults({ projects: SEED_PROJECTS, iterations: SEED_ITERATIONS }).write();
+
+// Live accessors — these return plain JS objects from the db
+const getProjects    = () => db.get('projects').value();
+const getIterations  = () => db.get('iterations').value();
+
+// Runtime: active agent streaming sessions (in-memory only, not persisted)
 const streamSessions = {};
 
 // ─────────────────────────────────────────────────────────────
@@ -298,8 +320,8 @@ app.get('/api/meta', (_req, res) => {
 
 // GET /api/dashboard — overview stats
 app.get('/api/dashboard', (_req, res) => {
-  const projectList = Object.values(projects);
-  const iterList    = Object.values(iterations);
+  const projectList = Object.values(getProjects());
+  const iterList    = Object.values(getIterations());
 
   const stats = {
     total_projects:    projectList.length,
@@ -308,17 +330,17 @@ app.get('/api/dashboard', (_req, res) => {
     scenario_counts: Object.fromEntries(
       Object.keys(SCENARIOS).map(s => [s, iterList.filter(i => i.scenario === Number(s)).length])
     ),
-    recent_iterations: iterList
+    recent_iterations: [...iterList]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 5)
-      .map(i => ({ ...i, project_name: projects[i.project_id]?.name })),
+      .map(i => ({ ...i, project_name: getProjects()[i.project_id]?.name })),
   };
   res.json(stats);
 });
 
 // GET /api/projects
 app.get('/api/projects', (_req, res) => {
-  res.json(Object.values(projects));
+  res.json(Object.values(getProjects()));
 });
 
 // POST /api/projects
@@ -327,26 +349,53 @@ app.post('/api/projects', (req, res) => {
   if (!name) return res.status(400).json({ error: 'name is required' });
   const id = `proj_${uuidv4().slice(0, 8)}`;
   const now = new Date().toISOString();
-  projects[id] = {
+  const project = {
     id, name, description: description || '', status: 'active',
     type: type || 'timeseries', tags: tags || [],
     current_version: 'v0.0', created_at: now, updated_at: now,
     best_metrics: null, baseline_metrics: null, improvement: null,
     iteration_count: 0,
   };
-  res.status(201).json(projects[id]);
+  db.set(`projects.${id}`, project).write();
+  res.status(201).json(project);
 });
 
 // GET /api/projects/:id
 app.get('/api/projects/:id', (req, res) => {
-  const p = projects[req.params.id];
+  const p = getProjects()[req.params.id];
   if (!p) return res.status(404).json({ error: 'Project not found' });
   res.json(p);
 });
 
+// PATCH /api/projects/:id — update status/name/description
+app.patch('/api/projects/:id', (req, res) => {
+  const p = getProjects()[req.params.id];
+  if (!p) return res.status(404).json({ error: 'Project not found' });
+  const allowed = ['name','description','status','tags','type'];
+  const updates = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+  updates.updated_at = new Date().toISOString();
+  Object.assign(p, updates);
+  db.set(`projects.${req.params.id}`, p).write();
+  res.json(p);
+});
+
+// DELETE /api/projects/:id
+app.delete('/api/projects/:id', (req, res) => {
+  const projects = getProjects();
+  if (!projects[req.params.id]) return res.status(404).json({ error: 'Project not found' });
+  db.unset(`projects.${req.params.id}`).write();
+  // cascade-delete iterations
+  const iters = getIterations();
+  Object.keys(iters).forEach(k => {
+    if (iters[k].project_id === req.params.id) db.unset(`iterations.${k}`).write();
+  });
+  res.json({ ok: true });
+});
+
 // GET /api/projects/:id/iterations
 app.get('/api/projects/:id/iterations', (req, res) => {
-  const list = Object.values(iterations)
+  const list = Object.values(getIterations())
     .filter(i => i.project_id === req.params.id)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   res.json(list);
@@ -354,14 +403,14 @@ app.get('/api/projects/:id/iterations', (req, res) => {
 
 // GET /api/iterations/:id
 app.get('/api/iterations/:id', (req, res) => {
-  const it = iterations[req.params.id];
+  const it = getIterations()[req.params.id];
   if (!it) return res.status(404).json({ error: 'Iteration not found' });
   res.json(it);
 });
 
 // GET /api/projects/:id/metrics-history — for charting
 app.get('/api/projects/:id/metrics-history', (req, res) => {
-  const list = Object.values(iterations)
+  const list = Object.values(getIterations())
     .filter(i => i.project_id === req.params.id && i.status === 'completed')
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   res.json(list.map(i => ({
@@ -429,14 +478,14 @@ app.get('/api/agent/stream/:sessionId', (req, res) => {
     }
 
     if (!aborted) {
-      // Save as a completed iteration
+      // Persist new iteration to lowdb
       const itId = `iter_${uuidv4().slice(0, 8)}`;
-      const proj = projects[session.project_id];
+      const proj = getProjects()[session.project_id];
       const scen = SCENARIOS[session.scenario];
       const now  = new Date().toISOString();
-      const vNum = (proj.iteration_count || 0) + 1;
+      const vNum = (proj ? proj.iteration_count || 0 : 0) + 1;
 
-      iterations[itId] = {
+      const newIter = {
         id: itId,
         project_id: session.project_id,
         version: `v${vNum}.0`,
@@ -453,10 +502,12 @@ app.get('/api/agent/stream/:sessionId', (req, res) => {
         code_preview: '# 参见Agent输出日志',
         backtest_period: '见分析报告',
       };
+      db.set(`iterations.${itId}`, newIter).write();
 
       if (proj) {
-        proj.iteration_count = (proj.iteration_count || 0) + 1;
+        proj.iteration_count = vNum;
         proj.updated_at = now;
+        db.set(`projects.${session.project_id}`, proj).write();
       }
 
       sendEvent({ type: 'complete', iteration_id: itId });
@@ -470,7 +521,7 @@ app.get('/api/agent/stream/:sessionId', (req, res) => {
 // GET /api/monitoring/:project_id — scenario-6 style monitoring data
 app.get('/api/monitoring/:project_id', (req, res) => {
   const pid = req.params.project_id;
-  if (!projects[pid]) return res.status(404).json({ error: 'Project not found' });
+  if (!getProjects()[pid]) return res.status(404).json({ error: 'Project not found' });
 
   // Generate 30-day MAPE trend
   const trend = [];

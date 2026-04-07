@@ -59,60 +59,85 @@ const fmt = {
   metric: (v, unit = '') => v != null ? `${v}${unit}` : '—',
 };
 
-// Simple markdown → HTML renderer
+// ─────────────────────────────────────────────────────────────
+// Markdown rendering — marked + highlight.js + DOMPurify
+// ─────────────────────────────────────────────────────────────
+
+function initMarked() {
+  if (!window.marked) return;
+
+  const renderer = new marked.Renderer();
+
+  // Syntax-highlighted code blocks via highlight.js
+  renderer.code = ({ text, lang }) => {
+    const language = lang && window.hljs?.getLanguage(lang) ? lang : 'plaintext';
+    const highlighted = window.hljs
+      ? window.hljs.highlight(text, { language, ignoreIllegals: true }).value
+      : text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`;
+  };
+
+  marked.use({
+    renderer,
+    gfm: true,
+    breaks: true,
+    async: false,
+  });
+}
+
 function md(text) {
   if (!text) return '';
-  let h = text
-    // code blocks
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-      `<pre><code>${escHtml(code.trim())}</code></pre>`)
-    // inline code
-    .replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`)
-    // bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // heading ##
-    .replace(/^#{1,3}\s(.+)$/gm, '<h3>$1</h3>')
-    // table rows
-    .replace(/^\|(.+)\|$/gm, row => {
-      const cells = row.split('|').filter((_,i,a) => i>0 && i<a.length-1).map(c => c.trim());
-      if (cells.every(c => /^[-:]+$/.test(c))) return '<!--sep-->';
-      return `<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
-    })
-    // horizontal rule
-    .replace(/^---$/gm, '<hr/>')
-    // bullet list items
-    .replace(/^[-*]\s(.+)$/gm, '<li>$1</li>')
-    // newlines → br (not inside pre)
-    .replace(/\n/g, '<br/>');
-
-  // wrap table rows
-  h = h.replace(/((<tr>.*?<\/tr>(<br\/>)?)+)/gs, t => {
-    const rows = t.replace(/<br\/>/g,'').replace('<!--sep-->','');
-    // first row becomes thead
-    const firstEnd = rows.indexOf('</tr>');
-    const head = rows.slice(0,firstEnd+5).replace(/<td>/g,'<th>').replace(/<\/td>/g,'</th>');
-    const body = rows.slice(firstEnd+5);
-    return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
-  });
-  h = h.replace(/((<li>.*?<\/li>(<br\/>)?)+)/gs, l =>
-    `<ul>${l.replace(/<br\/>/g,'')}</ul>`);
-  return h;
+  if (window.marked) {
+    const raw = marked.parse(text);
+    return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+  }
+  // Minimal fallback if CDN failed
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br/>');
 }
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function scenarioColor(scId) {
-  const colors = {1:'#6366F1',2:'#0EA5E9',3:'#EF4444',4:'#F59E0B',5:'#8B5CF6',6:'#10B981'};
-  return colors[scId] || '#6366F1';
+// ─────────────────────────────────────────────────────────────
+// ECharts helpers
+// ─────────────────────────────────────────────────────────────
+
+const ECHARTS_THEME = {
+  color: ['#6366F1','#0EA5E9','#10B981','#F59E0B','#8B5CF6','#EF4444'],
+  backgroundColor: 'transparent',
+  textStyle: { fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", sans-serif', fontSize: 12 },
+  title: { textStyle: { fontSize: 13, fontWeight: 600 } },
+  legend: { textStyle: { fontSize: 11 } },
+  categoryAxis: { axisLine: { lineStyle: { color: '#E5E7EB' } }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#6B7280' } },
+  valueAxis:    { axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#F3F4F6' } }, axisLabel: { color: '#6B7280' } },
+  tooltip: { backgroundColor: '#1F2937', borderColor: '#374151', textStyle: { color: '#F9FAFB', fontSize: 12 } },
+};
+
+function getChart(domId) {
+  const dom = $(domId);
+  if (!dom || !window.echarts) return null;
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) return existing;
+  const chart = echarts.init(dom, null, { renderer: 'svg' });
+  state.chartInstances[domId] = chart;
+  return chart;
 }
 
 function destroyChart(key) {
-  if (state.chartInstances[key]) {
-    state.chartInstances[key].destroy();
-    delete state.chartInstances[key];
+  const dom = $(key);
+  if (dom && window.echarts) {
+    const inst = echarts.getInstanceByDom(dom);
+    if (inst) inst.dispose();
   }
+  delete state.chartInstances[key];
+}
+
+function scenarioColor(scId) {
+  const colors = {1:'#6366F1',2:'#0EA5E9',3:'#EF4444',4:'#F59E0B',5:'#8B5CF6',6:'#10B981'};
+  return colors[scId] || '#6366F1';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -170,38 +195,47 @@ async function loadDashboard() {
     grid.appendChild(card);
   });
 
-  // Scenario bar chart
-  destroyChart('scenario');
-  if (window.CHART_LOADED && window.Chart) {
-    const ctx = $('scenarioChart').getContext('2d');
+  // Scenario bar chart (ECharts)
+  destroyChart('scenarioChart');
+  const scenarioChartEl = $('scenarioChart');
+  if (window.echarts && scenarioChartEl) {
     const scenarios = state.meta?.scenarios || {};
     const labels = Object.values(scenarios).map(s => `${s.icon} ${s.name}`);
     const vals   = Object.keys(scenarios).map(k => data.scenario_counts[k] || 0);
-    state.chartInstances['scenario'] = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: '迭代次数',
-          data: vals,
-          backgroundColor: Object.keys(scenarios).map(k => scenarioColor(Number(k)) + 'CC'),
-          borderColor:     Object.keys(scenarios).map(k => scenarioColor(Number(k))),
-          borderWidth: 1.5,
-          borderRadius: 4,
-        }],
+    const colors = Object.keys(scenarios).map(k => scenarioColor(Number(k)));
+    const chart = echarts.init(scenarioChartEl, null, { renderer: 'svg' });
+    state.chartInstances['scenarioChart'] = chart;
+    chart.setOption({
+      ...ECHARTS_THEME,
+      grid: { top: 16, right: 16, bottom: 50, left: 40 },
+      xAxis: {
+        type: 'category', data: labels,
+        axisLabel: { rotate: 18, fontSize: 11, color: '#6B7280' },
+        axisLine: { lineStyle: { color: '#E5E7EB' } }, axisTick: { show: false },
       },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#F3F4F6' } },
-          x: { grid: { display: false } },
-        },
+      yAxis: {
+        type: 'value', minInterval: 1,
+        splitLine: { lineStyle: { color: '#F3F4F6' } },
+        axisLabel: { color: '#6B7280' },
       },
+      tooltip: { trigger: 'axis', ...ECHARTS_THEME.tooltip },
+      series: [{
+        type: 'bar',
+        data: vals.map((v, i) => ({
+          value: v,
+          itemStyle: {
+            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [{ offset: 0, color: colors[i] }, { offset: 1, color: colors[i] + '88' }] },
+            borderRadius: [4, 4, 0, 0],
+          },
+        })),
+        barMaxWidth: 48,
+        label: { show: true, position: 'top', fontSize: 11, color: '#374151' },
+      }],
     });
-  } else {
-    $('scenarioChart').parentElement.innerHTML =
-      '<p style="color:var(--text-muted);font-size:12px;padding:20px">Chart.js 未加载，图表不可用</p>';
+  } else if (scenarioChartEl) {
+    scenarioChartEl.parentElement.innerHTML =
+      '<p style="color:var(--text-muted);font-size:12px;padding:20px">ECharts 未加载</p>';
   }
 
   // Recent iterations
@@ -284,6 +318,9 @@ async function loadProjects() {
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6a4 4 0 1 0 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6 2L4 4l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           ${p.iteration_count} 次迭代
         </span>
+        <button class="btn-delete-project" data-id="${p.id}" title="删除项目" onclick="event.stopPropagation();deleteProject('${p.id}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4l.5 8.5h5L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>`;
     grid.appendChild(card);
   });
@@ -426,7 +463,7 @@ async function loadProjectDetail(projectId) {
   const chartPanel = el('div', { className: 'panel' });
   chartPanel.innerHTML = `
     <div class="panel-header"><span class="panel-title">指标迭代趋势</span></div>
-    <div class="panel-body"><canvas id="${chartPanelId}" height="220"></canvas></div>`;
+    <div class="panel-body"><div id="${chartPanelId}" style="height:240px;width:100%"></div></div>`;
   panels.appendChild(chartPanel);
 
   // Iter history panel
@@ -480,65 +517,68 @@ async function loadProjectDetail(projectId) {
   container.appendChild(quickStart);
 }
 
-function drawMetricsChart(canvasId, iters) {
-  destroyChart(canvasId);
-  if (!window.CHART_LOADED || !window.Chart) return;
-  const canvas = $(canvasId);
-  if (!canvas) return;
+function drawMetricsChart(domId, iters) {
+  destroyChart(domId);
+  if (!window.echarts) return;
+  const dom = $(domId);
+  if (!dom) return;
 
   const completed = iters.filter(it => it.status === 'completed' && it.metrics);
   if (!completed.length) return;
 
-  const labels = completed.map(it => `${it.version}\n${state.meta?.scenarios?.[it.scenario]?.icon||''}`);
+  const labels = completed.map(it => `${it.version} ${state.meta?.scenarios?.[it.scenario]?.icon||''}`);
 
-  // Determine which metric to chart
-  const hasMape   = completed.some(it => it.metrics.mape != null);
-  const hasAuc    = completed.some(it => it.metrics.auc != null);
+  const hasMape    = completed.some(it => it.metrics.mape != null);
+  const hasAuc     = completed.some(it => it.metrics.auc != null);
   const hasRevLift = completed.some(it => it.metrics.revenue_lift != null);
 
-  let datasets = [];
-  if (hasMape) {
-    datasets.push({
-      label: 'MAPE (%)',
-      data: completed.map(it => it.metrics.mape),
-      borderColor: '#EF4444',
-      backgroundColor: '#EF444420',
-      tension: .4, fill: true, pointRadius: 5,
-    });
-  }
-  if (hasAuc) {
-    datasets.push({
-      label: 'AUC',
-      data: completed.map(it => it.metrics.auc),
-      borderColor: '#6366F1',
-      backgroundColor: '#6366F120',
-      tension: .4, fill: true, pointRadius: 5,
-    });
-  }
-  if (hasRevLift) {
-    datasets.push({
-      label: '收入提升%',
-      data: completed.map(it => it.metrics.revenue_lift),
-      borderColor: '#10B981',
-      backgroundColor: '#10B98120',
-      tension: .4, fill: true, pointRadius: 5,
-    });
-  }
+  const series = [];
+  if (hasMape) series.push({
+    name: 'MAPE (%)', type: 'line',
+    data: completed.map(it => it.metrics.mape ?? null),
+    smooth: true, symbol: 'circle', symbolSize: 7,
+    lineStyle: { color: '#EF4444', width: 2.5 },
+    itemStyle: { color: '#EF4444' },
+    areaStyle: { color: { type:'linear',x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:'#EF444430'},{offset:1,color:'#EF444405'}] } },
+  });
+  if (hasAuc) series.push({
+    name: 'AUC', type: 'line',
+    data: completed.map(it => it.metrics.auc ?? null),
+    smooth: true, symbol: 'circle', symbolSize: 7,
+    lineStyle: { color: '#6366F1', width: 2.5 },
+    itemStyle: { color: '#6366F1' },
+    areaStyle: { color: { type:'linear',x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:'#6366F130'},{offset:1,color:'#6366F105'}] } },
+  });
+  if (hasRevLift) series.push({
+    name: '收入提升%', type: 'line',
+    data: completed.map(it => it.metrics.revenue_lift ?? null),
+    smooth: true, symbol: 'circle', symbolSize: 7,
+    lineStyle: { color: '#10B981', width: 2.5 },
+    itemStyle: { color: '#10B981' },
+    areaStyle: { color: { type:'linear',x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:'#10B98130'},{offset:1,color:'#10B98105'}] } },
+  });
 
-  if (!datasets.length) return;
+  if (!series.length) return;
 
-  state.chartInstances[canvasId] = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { labels: { font: { size: 11 } } } },
-      scales: {
-        y: { grid: { color: '#F3F4F6' }, ticks: { font: { size: 11 } } },
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-      },
+  const chart = echarts.init(dom, null, { renderer: 'svg' });
+  state.chartInstances[domId] = chart;
+  chart.setOption({
+    ...ECHARTS_THEME,
+    grid: { top: 30, right: 20, bottom: 40, left: 48 },
+    tooltip: { trigger: 'axis', ...ECHARTS_THEME.tooltip },
+    legend: { top: 4, right: 8, textStyle: { fontSize: 11, color: '#6B7280' } },
+    xAxis: {
+      type: 'category', data: labels,
+      boundaryGap: false,
+      axisLabel: { fontSize: 10, color: '#6B7280' },
+      axisLine: { lineStyle: { color: '#E5E7EB' } }, axisTick: { show: false },
     },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: '#F3F4F6' } },
+      axisLabel: { color: '#6B7280', fontSize: 11 },
+    },
+    series,
   });
 }
 
@@ -825,7 +865,7 @@ async function loadMonitoringView() {
 
   const trendPanel = el('div', { className: 'panel flex-2' });
   trendPanel.innerHTML = `<div class="panel-header"><span class="panel-title">30天MAPE趋势</span></div>
-                          <div class="panel-body"><canvas id="mapeChart" height="220"></canvas></div>`;
+                          <div class="panel-body"><div id="mapeChart" style="height:230px;width:100%"></div></div>`;
   row.appendChild(trendPanel);
 
   const alertPanel = el('div', { className: 'panel' });
@@ -877,33 +917,52 @@ async function loadMonitoringView() {
   catPanel.appendChild(catBody);
   container.appendChild(catPanel);
 
-  // Draw trend chart
+  // Draw MAPE trend chart (ECharts)
   setTimeout(() => {
     destroyChart('mapeChart');
-    if (!window.CHART_LOADED || !window.Chart) return;
-    const ctx = $('mapeChart')?.getContext('2d');
-    if (!ctx) return;
-    state.chartInstances['mapeChart'] = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.trend.map(t => t.date.slice(5)),
-        datasets: [{
-          label: 'MAPE (%)',
-          data: data.trend.map(t => t.mape),
-          borderColor: '#EF4444',
-          backgroundColor: '#EF444420',
-          tension: .3, fill: true,
-          pointRadius: 2, pointHoverRadius: 5,
-        }],
+    if (!window.echarts) return;
+    const dom = $('mapeChart');
+    if (!dom) return;
+    const chart = echarts.init(dom, null, { renderer: 'svg' });
+    state.chartInstances['mapeChart'] = chart;
+    chart.setOption({
+      ...ECHARTS_THEME,
+      grid: { top: 16, right: 20, bottom: 40, left: 48 },
+      tooltip: {
+        trigger: 'axis', ...ECHARTS_THEME.tooltip,
+        formatter: params => `${params[0].axisValue}<br/>MAPE: <b>${params[0].value}%</b>`,
       },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { grid: { color: '#F3F4F6' }, ticks: { font: { size: 11 } } },
-          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 10 } },
+      xAxis: {
+        type: 'category',
+        data: data.trend.map(t => t.date.slice(5)),
+        boundaryGap: false,
+        axisLabel: { fontSize: 10, color: '#6B7280', interval: 4 },
+        axisLine: { lineStyle: { color: '#E5E7EB' } }, axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value', name: 'MAPE %',
+        nameTextStyle: { fontSize: 11, color: '#6B7280' },
+        splitLine: { lineStyle: { color: '#F3F4F6' } },
+        axisLabel: { color: '#6B7280', fontSize: 11 },
+      },
+      visualMap: {
+        show: false, type: 'continuous',
+        min: 5, max: 20,
+        inRange: { color: ['#10B981','#F59E0B','#EF4444'] },
+        dimension: 1,
+      },
+      series: [{
+        type: 'line', data: data.trend.map(t => t.mape),
+        smooth: true, symbol: 'none',
+        lineStyle: { width: 2.5, color: '#6366F1' },
+        areaStyle: { color: { type:'linear',x:0,y:0,x2:0,y2:1,
+          colorStops:[{offset:0,color:'#6366F140'},{offset:1,color:'#6366F105'}] } },
+        markLine: {
+          silent: true,
+          data: [{ yAxis: 10, lineStyle: { color: '#F59E0B', type: 'dashed' } }],
+          label: { formatter: '预警线 10%', fontSize: 10, color: '#F59E0B' },
         },
-      },
+      }],
     });
   }, 50);
 
@@ -1097,10 +1156,28 @@ function wireNav() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Project Deletion
+// ─────────────────────────────────────────────────────────────
+
+async function deleteProject(id) {
+  const p = state.projects.find(p => p.id === id);
+  if (!p) return;
+  if (!confirm(`确认删除项目「${p.name}」及其所有迭代记录？此操作不可撤销。`)) return;
+  try {
+    await api(`/api/projects/${id}`, { method: 'DELETE' });
+    await loadProjects();
+  } catch (err) {
+    alert(`删除失败：${err.message}`);
+  }
+}
+window.deleteProject = deleteProject;
+
+// ─────────────────────────────────────────────────────────────
 // Bootstrap
 // ─────────────────────────────────────────────────────────────
 
 async function init() {
+  initMarked();
   initSidebar();
   wireNav();
 

@@ -47,6 +47,26 @@ test('SCENARIOS cover all 6 defined scenarios', () => {
   });
 });
 
+test('lowdb FileSync adapter writes and reads correctly', () => {
+  const low      = require('../node_modules/lowdb');
+  const FileSync = require('../node_modules/lowdb/adapters/FileSync');
+  const os       = require('node:os');
+  const path     = require('node:path');
+  const fs       = require('node:fs');
+
+  const tmpFile = path.join(os.tmpdir(), `algo_test_${Date.now()}.json`);
+  const db = low(new FileSync(tmpFile));
+  db.defaults({ items: [] }).write();
+  db.get('items').push({ id: 'x1', name: 'test' }).write();
+
+  const db2 = low(new FileSync(tmpFile));
+  const items = db2.get('items').value();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, 'x1');
+
+  fs.unlinkSync(tmpFile);
+});
+
 test('monitoring KPI thresholds are logically consistent', () => {
   const kpis = { overall_mape: 7.8, stability_index: 0.83, coverage_rate: 97.2, data_latency_h: 0.5 };
   assert.ok(kpis.overall_mape < 15, 'MAPE below yellow alert threshold');

@@ -1350,6 +1350,18 @@ body {
   .dash-row { flex-direction: column; }
 }
 
+/* Delete button on project cards */
+.btn-delete-project {
+  background: none; border: none; cursor: pointer;
+  color: var(--gray-400);
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center;
+  transition: color var(--transition), background var(--transition);
+  margin-left: auto;
+}
+.btn-delete-project:hover { color: var(--red-500); background: #FEE2E2; }
+
 /* ═══════════════════════════════════════════════════════════
    UTILITIES
    ═══════════════════════════════════════════════════════════ */
