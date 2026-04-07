@@ -10,6 +10,7 @@ const state = {
   view: 'dashboard',
   scenario: null,
   projects: [],
+  labs: [],
   meta: null,
   currentProjectId: null,
   agentSession: null,
@@ -339,6 +340,131 @@ function syncProjectPickers(projects) {
   const agentPicker = $('agentProjectPicker');
   agentPicker.innerHTML = opts || '<option value="">暂无项目</option>';
   if (state.currentProjectId) agentPicker.value = state.currentProjectId;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Labs View
+// ─────────────────────────────────────────────────────────────
+
+async function loadLabs() {
+  state.labs = await api('/api/labs');
+  renderLabsGrid();
+  syncLabPicker();
+}
+
+function renderLabsGrid() {
+  const grid = $('labsGrid');
+  if (!grid) return;
+  grid.className = 'labs-grid';
+  grid.innerHTML = '';
+
+  if (!state.labs.length) {
+    grid.appendChild(el('div', { className: 'empty-state' },
+      '<p>暂无 Lab 环境，点击右上角"注册 Lab 环境"添加</p>'
+    ));
+    return;
+  }
+
+  state.labs.forEach(lab => {
+    const card = el('div', { className: 'lab-card' });
+    const projectNames = (lab.project_ids || [])
+      .map(pid => state.projects.find(p => p.id === pid)?.name || pid)
+      .map(n => `<span class="tag">${n}</span>`)
+      .join('');
+
+    card.innerHTML = `
+      <div class="lab-card-header">
+        <div class="lab-name">${lab.name}</div>
+        <span class="lab-status ${lab.status || 'unknown'}">${
+          lab.status === 'online' ? '● 在线' : lab.status === 'offline' ? '● 离线' : '? 未知'
+        }</span>
+      </div>
+      <div class="lab-url">${lab.url}</div>
+      ${lab.note ? `<div class="lab-note">${lab.note}</div>` : ''}
+      <div class="lab-projects">${projectNames || '<span style="font-size:11px;color:var(--text-muted)">未绑定项目</span>'}</div>
+      <div class="lab-actions">
+        <button class="btn-outline btn-sm" onclick="pingLab('${lab.id}',this)">测试连通性</button>
+        <button class="btn-ghost btn-sm" onclick="deleteLab('${lab.id}')">删除</button>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+function syncLabPicker() {
+  const picker = $('agentLabPicker');
+  if (!picker) return;
+  const opts = state.labs.map(l =>
+    `<option value="${l.id}">${l.name} ${l.status === 'online' ? '● 在线' : l.status === 'offline' ? '○ 离线' : ''}</option>`
+  ).join('');
+  picker.innerHTML = '<option value="">自动选择（根据项目绑定）</option>' + opts;
+}
+
+async function pingLab(labId, btn) {
+  const orig = btn.textContent;
+  btn.textContent = '检测中…';
+  btn.disabled = true;
+  try {
+    const result = await api(`/api/labs/${labId}/ping`, { method: 'POST' });
+    const lab = state.labs.find(l => l.id === labId);
+    if (lab) lab.status = result.status;
+    renderLabsGrid();
+    syncLabPicker();
+  } catch {
+    btn.textContent = '连接失败';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
+  }
+}
+window.pingLab = pingLab;
+
+async function deleteLab(labId) {
+  const lab = state.labs.find(l => l.id === labId);
+  if (!confirm(`确认删除 Lab「${lab?.name}」？`)) return;
+  await api(`/api/labs/${labId}`, { method: 'DELETE' });
+  await loadLabs();
+}
+window.deleteLab = deleteLab;
+
+function openNewLabModal() {
+  $('modalLabOverlay').classList.remove('hidden');
+  ['inputLabName','inputLabUrl','inputLabToken','inputLabKernel','inputLabNote'].forEach(id => {
+    const el = $(id); if (el) el.value = id === 'inputLabKernel' ? 'python3' : '';
+  });
+  $('inputLabName').focus();
+}
+
+function closeLabModal() {
+  $('modalLabOverlay').classList.add('hidden');
+}
+
+async function createLab() {
+  const name  = $('inputLabName').value.trim();
+  const url   = $('inputLabUrl').value.trim();
+  const token = $('inputLabToken').value.trim();
+  if (!name || !url || !token) {
+    alert('名称、URL 和 Token 为必填项');
+    return;
+  }
+  const btn = $('btnLabModalCreate');
+  btn.disabled = true;
+  btn.textContent = '注册中…';
+  try {
+    await api('/api/labs', {
+      method: 'POST',
+      body: {
+        name, url, token,
+        kernel: $('inputLabKernel').value.trim() || 'python3',
+        note:   $('inputLabNote').value.trim(),
+      },
+    });
+    closeLabModal();
+    await loadLabs();
+    showView('labs');
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '注册并测试连通性';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -720,20 +846,61 @@ function loadScenarioView(scenarioId) {
   picker.innerHTML = state.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   if (state.currentProjectId) picker.value = state.currentProjectId;
 
+  // Wire lab picker
+  syncLabPicker();
+  const labPicker = $('agentLabPicker');
+  const labStatusRow = $('labStatusRow');
+  labPicker.addEventListener('change', () => {
+    const lab = state.labs.find(l => l.id === labPicker.value);
+    if (lab) {
+      labStatusRow.style.display = 'flex';
+      labStatusRow.innerHTML = `
+        <span class="lab-status ${lab.status || 'unknown'}" style="font-size:10px">
+          ${lab.status === 'online' ? '● 在线' : lab.status === 'offline' ? '● 离线' : '? 未知'}
+        </span>
+        <span style="font-size:11px;color:var(--text-muted)">${lab.url}</span>`;
+    } else {
+      labStatusRow.style.display = 'none';
+    }
+  });
+
+  // Requirement textarea — char count + run button gate
+  const reqTa  = $('agentRequirement');
+  const reqCnt = $('reqCharCount');
+  reqTa.value  = '';
+  reqCnt.textContent = '0 / 500';
+
+  const updateRunBtn = () => {
+    const hasReq  = reqTa.value.trim().length > 0;
+    const hasProj = picker.value;
+    btn.disabled  = !(hasReq && hasProj);
+    reqCnt.textContent = `${reqTa.value.length} / 500`;
+  };
+  reqTa.addEventListener('input', updateRunBtn);
+  picker.addEventListener('change', updateRunBtn);
+
   // Reset stream panel
   $('streamPlaceholder').classList.remove('hidden');
   $('streamMessages').classList.add('hidden');
   $('streamMessages').innerHTML = '';
   $('streamDone').classList.add('hidden');
+  $('stageBar').classList.add('hidden');
+  document.querySelectorAll('.stage-step').forEach(s => {
+    s.classList.remove('active','done');
+  });
 
   const btn = $('btnRunAgent');
-  btn.disabled = !picker.value;
-  picker.addEventListener('change', () => { btn.disabled = !picker.value; });
-  btn.onclick = () => startAgentStream(scenarioId, picker.value);
+  btn.disabled = true;
+  btn.onclick = () => startAgentStream(
+    scenarioId,
+    picker.value,
+    labPicker.value || null,
+    reqTa.value.trim()
+  );
 }
 
-async function startAgentStream(scenarioId, projectId) {
-  if (!projectId) return;
+async function startAgentStream(scenarioId, projectId, labId, requirement) {
+  if (!projectId || !requirement) return;
 
   const btn = $('btnRunAgent');
   btn.disabled = true;
@@ -744,18 +911,80 @@ async function startAgentStream(scenarioId, projectId) {
   $('streamMessages').innerHTML = '';
   $('streamDone').classList.add('hidden');
 
+  // Show and reset stage bar
+  const stageBar = $('stageBar');
+  stageBar.classList.remove('hidden');
+  document.querySelectorAll('.stage-step').forEach(s => s.classList.remove('active','done'));
+
   const { sessionId } = await api('/api/agent/start', {
     method: 'POST',
-    body: { project_id: projectId, scenario: scenarioId },
+    body: { project_id: projectId, scenario: scenarioId, lab_id: labId, requirement },
   });
 
   const msgMap = {};  // agentId → { bubble, bodyEl }
+  let labExecBlock = null;  // the live lab output block
+
+  const setStage = (n) => {
+    document.querySelectorAll('.stage-step').forEach(s => {
+      const sn = Number(s.dataset.stage);
+      if (sn < n)  s.classList.add('done'),   s.classList.remove('active');
+      if (sn === n) s.classList.add('active'), s.classList.remove('done');
+      if (sn > n)  s.classList.remove('active','done');
+    });
+  };
 
   const es = new EventSource(`${API}/api/agent/stream/${sessionId}`);
 
   es.onmessage = (e) => {
     const data = JSON.parse(e.data);
 
+    // ── Stage marker ──────────────────────────────────────
+    if (data.type === 'stage') {
+      setStage(data.stage);
+      // If stage 3, pre-create the lab exec block
+      if (data.stage === 3) {
+        labExecBlock = el('div', { className: 'lab-exec-block' });
+        labExecBlock.innerHTML = `
+          <div class="lab-exec-header">
+            <span class="exec-status-dot running"></span>
+            <span>🖥️ Lab 执行中...</span>
+          </div>
+          <div class="lab-output-lines" id="labOutputLines"></div>`;
+        $('streamMessages').appendChild(labExecBlock);
+        labExecBlock.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    }
+
+    // ── Lab connectivity messages ─────────────────────────
+    if (data.type === 'lab_exec') {
+      if (labExecBlock) {
+        const header = labExecBlock.querySelector('.lab-exec-header');
+        if (data.phase === 'done') {
+          header.innerHTML = '<span class="exec-status-dot"></span><span>✅ Lab 执行完成</span>';
+        } else {
+          header.innerHTML = `<span class="exec-status-dot running"></span><span>🖥️ ${data.message}</span>`;
+        }
+      }
+    }
+
+    // ── Lab stdout lines ──────────────────────────────────
+    if (data.type === 'lab_output') {
+      const linesEl = $('labOutputLines');
+      if (linesEl) {
+        const line = el('span', { className: 'lab-output-line' });
+        const text = data.line;
+        if (text.startsWith('[WARN]'))   line.classList.add('warn');
+        if (text.startsWith('[ERROR]'))  line.classList.add('error');
+        if (text.startsWith('[METRIC]')) line.classList.add('metric');
+        line.textContent = text;
+        linesEl.appendChild(line);
+        linesEl.appendChild(document.createTextNode('\n'));
+        linesEl.scrollTop = linesEl.scrollHeight;
+        labExecBlock?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    }
+
+    // ── Agent message bubbles ─────────────────────────────
     if (data.type === 'agent_start') {
       const ag = data.agent;
       const bubble = el('div', { className: 'message-bubble' });
@@ -764,7 +993,7 @@ async function startAgentStream(scenarioId, projectId) {
         <div class="message-content">
           <div class="message-header">
             <span class="message-agent-name" style="color:${ag.color}">${ag.name}</span>
-            <span class="message-time">${new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
+            <span class="message-time">${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
           </div>
           <div class="message-body" style="border-color:${ag.color}">
             <span class="typing-cursor"></span>
@@ -791,17 +1020,27 @@ async function startAgentStream(scenarioId, projectId) {
       }
     }
 
+    // ── Completion ────────────────────────────────────────
     if (data.type === 'complete') {
       es.close();
+      document.querySelectorAll('.stage-step').forEach(s => {
+        s.classList.remove('active'); s.classList.add('done');
+      });
       btn.disabled = false;
       btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2l10 6-10 6V2z" fill="currentColor"/></svg> 再次运行';
-
       $('streamDone').classList.remove('hidden');
       $('streamDoneNote').textContent = `迭代记录已生成 (ID: ${data.iteration_id})，可在"迭代历史"中查看`;
       $('btnViewNewIter').onclick = () => loadIterationDetail(data.iteration_id);
-
-      // Refresh project list in background
       loadProjects().catch(() => {});
+    }
+
+    if (data.type === 'error') {
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '启动 Agent 分析';
+      const errMsg = el('div', { style: 'padding:12px;color:var(--red-500);font-size:13px;background:#FEF2F2;border-radius:8px;margin:8px 0' });
+      errMsg.textContent = `执行错误：${data.message}`;
+      $('streamMessages').appendChild(errMsg);
     }
   };
 
@@ -1112,6 +1351,9 @@ function wireNav() {
       } else if (view === 'projects') {
         showView('projects');
         await loadProjects();
+      } else if (view === 'labs') {
+        showView('labs');
+        await loadLabs();
       } else if (view === 'iterations') {
         showView('iterations');
         await loadIterations();
@@ -1150,9 +1392,14 @@ function wireNav() {
   $('modalClose').addEventListener('click', closeModal);
   $('btnModalCreate').addEventListener('click', createProject);
   $('modalOverlay').addEventListener('click', e => { if (e.target === $('modalOverlay')) closeModal(); });
-
-  // Enter in modal
   $('inputProjectName').addEventListener('keydown', e => { if (e.key === 'Enter') createProject(); });
+
+  // New Lab button
+  $('btnNewLab')?.addEventListener('click', openNewLabModal);
+  $('btnLabModalCancel')?.addEventListener('click', closeLabModal);
+  $('modalLabClose')?.addEventListener('click', closeLabModal);
+  $('btnLabModalCreate')?.addEventListener('click', createLab);
+  $('modalLabOverlay')?.addEventListener('click', e => { if (e.target === $('modalLabOverlay')) closeLabModal(); });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1181,21 +1428,12 @@ async function init() {
   initSidebar();
   wireNav();
 
-  try {
-    state.meta = await api('/api/meta');
-  } catch (e) {
-    console.warn('Failed to load meta', e);
-  }
+  try { state.meta = await api('/api/meta'); } catch (e) { console.warn('meta load error', e); }
+  try { await loadProjects(); } catch (e) { console.warn('projects load error', e); }
+  try { await loadLabs(); } catch (e) { console.warn('labs load error', e); }
 
-  try {
-    await loadProjects();
-  } catch (e) {
-    console.warn('Failed to load projects', e);
-  }
-
-  // Default: dashboard
   showView('dashboard');
-  try { await loadDashboard(); } catch (e) { console.warn('Dashboard load error', e); }
+  try { await loadDashboard(); } catch (e) { console.warn('dashboard load error', e); }
 }
 
 document.addEventListener('DOMContentLoaded', init);

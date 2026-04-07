@@ -45,6 +45,11 @@
       <span>迭代历史</span>
     </a>
 
+    <a class="nav-item" data-view="labs" href="#">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5.5" cy="8.5" r="1" fill="currentColor"/></svg>
+      <span>Lab 环境</span>
+    </a>
+
     <div class="nav-section-label">Agent 场景</div>
     <a class="nav-item scenario-nav" data-scenario="1" data-view="scenario" href="#">
       <span class="scenario-icon">🚀</span><span>初始建模</span>
@@ -150,6 +155,14 @@
     <div id="iterationDetailContent"></div>
   </section>
 
+  <!-- ── VIEW: Labs ── -->
+  <section class="view hidden" id="view-labs">
+    <div class="labs-header">
+      <button class="btn-primary btn-sm" id="btnNewLab">+ 注册 Lab 环境</button>
+    </div>
+    <div id="labsGrid"></div>
+  </section>
+
   <!-- ── VIEW: Scenario (Agent Run) ── -->
   <section class="view hidden" id="view-scenario">
     <div class="scenario-layout">
@@ -163,9 +176,26 @@
           </div>
         </div>
 
+        <!-- 需求输入 -->
+        <div class="config-section">
+          <label class="config-label">需求描述 <span style="color:var(--red-500)">*</span></label>
+          <textarea id="agentRequirement" class="config-textarea"
+            placeholder="用自然语言描述本次分析目标，例如：&#10;· 提升大促期间预测精度至MAPE≤20%&#10;· 分析近期补货偏低的原因&#10;· 根据供应链需求优化预测粒度"
+            rows="4" maxlength="500"></textarea>
+          <div class="char-count" id="reqCharCount">0 / 500</div>
+        </div>
+
         <div class="config-section">
           <label class="config-label">选择项目</label>
           <select id="agentProjectPicker" class="config-select"></select>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">目标 Lab 环境</label>
+          <select id="agentLabPicker" class="config-select">
+            <option value="">自动选择（根据项目绑定）</option>
+          </select>
+          <div class="lab-status-row" id="labStatusRow" style="display:none"></div>
         </div>
 
         <div class="config-section" id="agentConfigExtra"></div>
@@ -182,9 +212,32 @@
 
       <!-- Right: Streaming dialogue -->
       <div class="scenario-stream" id="scenarioStream">
+        <!-- Stage progress bar -->
+        <div class="stage-bar hidden" id="stageBar">
+          <div class="stage-step" data-stage="1">
+            <div class="stage-dot"></div>
+            <span>需求解析</span>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="stage-step" data-stage="2">
+            <div class="stage-dot"></div>
+            <span>生成代码</span>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="stage-step" data-stage="3">
+            <div class="stage-dot"></div>
+            <span>Lab 执行</span>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="stage-step" data-stage="4">
+            <div class="stage-dot"></div>
+            <span>结果解读</span>
+          </div>
+        </div>
+
         <div class="stream-placeholder" id="streamPlaceholder">
           <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="30" stroke="#E0E7FF" stroke-width="2"/><path d="M20 32h8l4-8 4 16 4-10 4 2" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <p>配置并启动 Agent，多角色协作分析将在此处实时展示</p>
+          <p>填写需求描述并启动 Agent，4阶段协作分析将在此处实时展示</p>
         </div>
         <div class="stream-messages hidden" id="streamMessages"></div>
         <div class="stream-done hidden" id="streamDone">
@@ -234,6 +287,38 @@
     <div class="modal-footer">
       <button class="btn-ghost" id="btnModalCancel">取消</button>
       <button class="btn-primary" id="btnModalCreate">创建项目</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: New Lab
+═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modalLabOverlay">
+  <div class="modal" id="modalNewLab">
+    <div class="modal-header">
+      <span class="modal-title">注册 Lab 环境</span>
+      <button class="modal-close" id="modalLabClose">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="form-label">Lab 名称 <span class="required">*</span></label>
+      <input type="text" id="inputLabName" class="form-input" placeholder="例：Lab-销量预测环境" maxlength="60" />
+
+      <label class="form-label">JupyterLab URL <span class="required">*</span></label>
+      <input type="url" id="inputLabUrl" class="form-input" placeholder="https://lab.mycompany.com" />
+
+      <label class="form-label">Access Token <span class="required">*</span></label>
+      <input type="password" id="inputLabToken" class="form-input" placeholder="Jupyter Server Token" />
+
+      <label class="form-label">内核名称</label>
+      <input type="text" id="inputLabKernel" class="form-input" value="python3" />
+
+      <label class="form-label">备注说明</label>
+      <textarea id="inputLabNote" class="form-input form-textarea" placeholder="环境配置、所属项目等说明" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" id="btnLabModalCancel">取消</button>
+      <button class="btn-primary" id="btnLabModalCreate">注册并测试连通性</button>
     </div>
   </div>
 </div>

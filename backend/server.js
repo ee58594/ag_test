@@ -249,11 +249,43 @@ const SEED_ITERATIONS = {
 // Bootstrap lowdb with seed data
 // ─────────────────────────────────────────────────────────────
 
-db.defaults({ projects: SEED_PROJECTS, iterations: SEED_ITERATIONS }).write();
+const SEED_LABS = {
+  lab_001: {
+    id: 'lab_001', name: 'Lab-销量预测环境',
+    url: 'https://lab01.example.com', token: 'demo-token-001',
+    status: 'online', kernel: 'python3',
+    project_ids: ['proj_001'],
+    note: '销量预测专用 JupyterLab，配备 LightGBM + LSTM 环境',
+    created_at: '2025-01-15T10:00:00Z',
+  },
+  lab_002: {
+    id: 'lab_002', name: 'Lab-用户模型环境',
+    url: 'https://lab02.example.com', token: 'demo-token-002',
+    status: 'online', kernel: 'python3',
+    project_ids: ['proj_002'],
+    note: '用户流失/购买预测专用，配备 XGBoost + 用户行为分析库',
+    created_at: '2025-02-10T09:00:00Z',
+  },
+  lab_003: {
+    id: 'lab_003', name: 'Lab-定价策略环境',
+    url: 'https://lab03.example.com', token: 'demo-token-003',
+    status: 'offline', kernel: 'python3',
+    project_ids: ['proj_003'],
+    note: '动态定价与强化学习实验环境',
+    created_at: '2025-03-01T09:00:00Z',
+  },
+};
+
+db.defaults({
+  projects: SEED_PROJECTS,
+  iterations: SEED_ITERATIONS,
+  labs: SEED_LABS,
+}).write();
 
 // Live accessors — these return plain JS objects from the db
 const getProjects    = () => db.get('projects').value();
 const getIterations  = () => db.get('iterations').value();
+const getLabs        = () => db.get('labs').value();
 
 // Runtime: active agent streaming sessions (in-memory only, not persisted)
 const streamSessions = {};
@@ -419,21 +451,88 @@ app.get('/api/projects/:id/metrics-history', (req, res) => {
   })));
 });
 
+// ─────────────────────────────────────────────────────────────
+// Lab Environment Routes
+// ─────────────────────────────────────────────────────────────
+
+// GET /api/labs
+app.get('/api/labs', (_req, res) => {
+  // Never expose raw tokens to frontend
+  const safe = Object.values(getLabs()).map(({ token: _t, ...rest }) => rest);
+  res.json(safe);
+});
+
+// POST /api/labs
+app.post('/api/labs', (req, res) => {
+  const { name, url, token, kernel = 'python3', project_ids = [], note = '' } = req.body;
+  if (!name || !url || !token) return res.status(400).json({ error: 'name, url and token are required' });
+  const id  = `lab_${uuidv4().slice(0, 8)}`;
+  const lab = { id, name, url, token, kernel, project_ids, note, status: 'unknown', created_at: new Date().toISOString() };
+  db.set(`labs.${id}`, lab).write();
+  const { token: _t, ...safe } = lab;
+  res.status(201).json(safe);
+});
+
+// PATCH /api/labs/:id
+app.patch('/api/labs/:id', (req, res) => {
+  const lab = getLabs()[req.params.id];
+  if (!lab) return res.status(404).json({ error: 'Lab not found' });
+  ['name','url','token','kernel','project_ids','note','status'].forEach(k => {
+    if (req.body[k] !== undefined) lab[k] = req.body[k];
+  });
+  db.set(`labs.${req.params.id}`, lab).write();
+  const { token: _t, ...safe } = lab;
+  res.json(safe);
+});
+
+// DELETE /api/labs/:id
+app.delete('/api/labs/:id', (req, res) => {
+  if (!getLabs()[req.params.id]) return res.status(404).json({ error: 'Lab not found' });
+  db.unset(`labs.${req.params.id}`).write();
+  res.json({ ok: true });
+});
+
+// POST /api/labs/:id/ping — test connectivity (simulated)
+app.post('/api/labs/:id/ping', async (req, res) => {
+  const lab = getLabs()[req.params.id];
+  if (!lab) return res.status(404).json({ error: 'Lab not found' });
+  // In production: fetch(`${lab.url}/api/kernels`, {headers:{Authorization:`token ${lab.token}`}})
+  await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
+  const online = lab.url.includes('example.com') ? (lab.id !== 'lab_003') : true;
+  const newStatus = online ? 'online' : 'offline';
+  lab.status = newStatus;
+  db.set(`labs.${lab.id}`, lab).write();
+  res.json({ status: newStatus, latency_ms: Math.round(400 + Math.random() * 200) });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Agent Session Management
+// ─────────────────────────────────────────────────────────────
+
 // POST /api/agent/start — create a new streaming session
 app.post('/api/agent/start', (req, res) => {
-  const { project_id, scenario } = req.body;
+  const { project_id, scenario, lab_id, requirement } = req.body;
   if (!project_id || !scenario) return res.status(400).json({ error: 'project_id and scenario are required' });
   if (!SCENARIOS[scenario]) return res.status(400).json({ error: 'Invalid scenario' });
 
   const sessionId = uuidv4();
   streamSessions[sessionId] = {
-    id: sessionId, project_id, scenario: Number(scenario),
-    status: 'pending', created_at: new Date().toISOString(),
+    id: sessionId,
+    project_id,
+    scenario:    Number(scenario),
+    lab_id:      lab_id || null,
+    requirement: requirement || '',   // 用户自然语言需求
+    status:      'pending',
+    created_at:  new Date().toISOString(),
   };
   res.json({ sessionId });
 });
 
-// GET /api/agent/stream/:sessionId — SSE endpoint
+// GET /api/agent/stream/:sessionId — SSE: 4-stage orchestration
+// Stage 1 PM:       解析需求，制定任务方案
+// Stage 2 Engineer: 生成执行代码
+// Stage 3 Lab Exec: 推送代码到 Lab 执行（模拟 Jupyter API 调用）
+// Stage 4 Analyst:  解读结果，形成结论
 app.get('/api/agent/stream/:sessionId', (req, res) => {
   const session = streamSessions[req.params.sessionId];
   if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -443,80 +542,250 @@ app.get('/api/agent/stream/:sessionId', (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  const script = AGENT_SCRIPTS[session.scenario] || [];
   let aborted = false;
-
   req.on('close', () => { aborted = true; });
 
-  const sendEvent = (data) => {
-    if (!aborted) res.write(`data: ${JSON.stringify(data)}\n\n`);
+  const send = (data) => { if (!aborted) res.write(`data: ${JSON.stringify(data)}\n\n`); };
+
+  // Helper: stream text token by token
+  const streamText = async (agentId, text) => {
+    if (aborted) return;
+    send({ type: 'agent_start', agent: AGENTS[agentId] });
+    let acc = '';
+    for (const word of text.split(/(\s+)/)) {
+      if (aborted) return;
+      acc += word;
+      await new Promise(r => setTimeout(r, 20 + Math.random() * 28));
+      send({ type: 'token', agent: AGENTS[agentId], token: word, full: acc });
+    }
+    send({ type: 'agent_end', agent: AGENTS[agentId], content: text });
   };
 
-  const runScript = async () => {
+  const run = async () => {
     session.status = 'running';
-    let totalDelay = 0;
+    const proj     = getProjects()[session.project_id] || {};
+    const scen     = SCENARIOS[session.scenario];
+    const lab      = session.lab_id ? getLabs()[session.lab_id] : null;
+    const req_text = session.requirement || `执行${scen.name}分析`;
+    const labName  = lab ? lab.name : '（未绑定 Lab）';
+    const now      = new Date().toISOString();
 
-    for (const block of script) {
-      if (aborted) break;
-      totalDelay += 1200 + Math.random() * 800;
+    // ── STAGE 1: 需求解析（PM） ───────────────────────────
+    send({ type: 'stage', stage: 1, label: '需求解析', icon: '📋' });
+    await new Promise(r => setTimeout(r, 600));
 
-      await new Promise(r => setTimeout(r, totalDelay < 1500 ? 800 : 1200));
-      if (aborted) break;
+    await streamText('pm',
+`**需求解析 · ${scen.name}**
 
-      // Stream the content word-by-word with small delays
-      const words = block.content.split(/(\s+)/);
-      sendEvent({ type: 'agent_start', agent: AGENTS[block.agent] });
-      let accumulated = '';
+**项目：** ${proj.name || session.project_id}
+**目标实验环境：** ${labName}
+**用户需求：**
+> ${req_text}
 
-      for (const word of words) {
-        if (aborted) break;
-        accumulated += word;
-        await new Promise(r => setTimeout(r, 18 + Math.random() * 25));
-        sendEvent({ type: 'token', agent: AGENTS[block.agent], token: word, full: accumulated });
-      }
-      sendEvent({ type: 'agent_end', agent: AGENTS[block.agent], content: block.content });
+**任务分解：**
+1. 理解业务目标与数据背景
+2. 确定本次迭代的建模方向和评估指标
+3. 将需求转化为可执行的技术方案
+
+**方案确认：**
+基于当前项目 ${proj.current_version || 'v1.0'} 版本现状，本次迭代聚焦于以下方向：
+- 核心目标：${req_text}
+- 评估指标：${proj.best_metrics?.label || 'MAPE / AUC'}
+- 执行环境：${labName}
+- 预计代码规模：50~120行
+
+✅ **需求解析完成，移交建模工程师生成执行代码**`);
+
+    if (aborted) return;
+
+    // ── STAGE 2: 代码生成（Engineer） ────────────────────
+    send({ type: 'stage', stage: 2, label: '生成执行代码', icon: '⚙️' });
+    await new Promise(r => setTimeout(r, 800));
+
+    const codeContent = buildIterationCode(scen.id, proj, req_text);
+
+    await streamText('engineer',
+`**代码生成 · 针对${scen.name}场景**
+
+根据需求方案，生成如下执行代码，将通过 Jupyter Server API 推送至 **${labName}** 执行：
+
+\`\`\`python
+${codeContent}
+\`\`\`
+
+**代码说明：**
+- 自动读取项目数据路径，无需手动配置
+- 执行完成后自动通过 \`mlflow\` 上报指标到中控
+- 输出 Notebook 存入 \`outputs/\` 目录，供后续审计
+
+✅ **代码已就绪，准备推送 Lab 执行**`);
+
+    if (aborted) return;
+
+    // ── STAGE 3: Lab 执行（系统消息） ────────────────────
+    send({ type: 'stage', stage: 3, label: 'Lab 执行', icon: '🖥️' });
+    await new Promise(r => setTimeout(r, 500));
+
+    // 模拟 Jupyter API 调用过程
+    send({ type: 'lab_exec', phase: 'connecting', lab: labName,
+           message: `正在连接 ${labName}...` });
+    await new Promise(r => setTimeout(r, 700));
+
+    send({ type: 'lab_exec', phase: 'kernel_ready', lab: labName,
+           message: '内核就绪，开始执行代码...' });
+    await new Promise(r => setTimeout(r, 1200));
+
+    // 模拟执行中的 stdout 流
+    const execLines = generateMockExecOutput(scen.id, proj);
+    for (const line of execLines) {
+      if (aborted) return;
+      send({ type: 'lab_output', line });
+      await new Promise(r => setTimeout(r, 180 + Math.random() * 220));
     }
 
-    if (!aborted) {
-      // Persist new iteration to lowdb
-      const itId = `iter_${uuidv4().slice(0, 8)}`;
-      const proj = getProjects()[session.project_id];
-      const scen = SCENARIOS[session.scenario];
-      const now  = new Date().toISOString();
-      const vNum = (proj ? proj.iteration_count || 0 : 0) + 1;
+    send({ type: 'lab_exec', phase: 'done', lab: labName,
+           message: '执行完成，获取结果...' });
+    await new Promise(r => setTimeout(r, 600));
 
-      const newIter = {
-        id: itId,
-        project_id: session.project_id,
-        version: `v${vNum}.0`,
-        scenario: session.scenario,
-        status: 'completed',
-        description: `[Agent自动生成] ${scen.name}`,
-        created_at: session.created_at,
-        completed_at: now,
-        agents: scen.agents,
-        metrics: { model: `${scen.name} 模型` },
-        vs_prev: null,
-        conclusion: `${scen.name}场景执行完成，请查看Agent日志获取详细结论。`,
-        highlights: [`${scen.name}流程已执行`],
-        code_preview: '# 参见Agent输出日志',
-        backtest_period: '见分析报告',
-      };
-      db.set(`iterations.${itId}`, newIter).write();
+    if (aborted) return;
 
-      if (proj) {
-        proj.iteration_count = vNum;
-        proj.updated_at = now;
-        db.set(`projects.${session.project_id}`, proj).write();
-      }
+    // ── STAGE 4: 结果解读（Analyst） ─────────────────────
+    send({ type: 'stage', stage: 4, label: '结果解读', icon: '📊' });
+    await new Promise(r => setTimeout(r, 700));
 
-      sendEvent({ type: 'complete', iteration_id: itId });
-      res.end();
+    const { summary, metrics } = buildResultSummary(scen.id, proj);
+
+    await streamText('analyst',
+`**执行结果解读**
+
+**Lab 执行状态：** ✅ 成功
+**执行时长：** ${(8 + Math.random() * 12).toFixed(1)}分钟
+
+${summary}
+
+**与历史版本对比：**
+| 指标 | 上一版本 | 本次结果 | 变化 |
+|------|---------|---------|------|
+${metrics.map(m => `| ${m.name} | ${m.prev} | **${m.curr}** | ${m.delta} |`).join('\n')}
+
+**结论与建议：**
+${buildConclusion(scen.id, req_text)}
+
+✅ **本次迭代分析完成，迭代记录已写入项目历史**`);
+
+    if (aborted) return;
+
+    // ── 持久化迭代记录 ────────────────────────────────────
+    const itId  = `iter_${uuidv4().slice(0, 8)}`;
+    const vNum  = (proj.iteration_count || 0) + 1;
+
+    db.set(`iterations.${itId}`, {
+      id: itId,
+      project_id:    session.project_id,
+      version:       `v${vNum}.0`,
+      scenario:      session.scenario,
+      lab_id:        session.lab_id || null,
+      status:        'completed',
+      requirement:   req_text,
+      description:   req_text.slice(0, 80),
+      created_at:    session.created_at,
+      completed_at:  now,
+      agents:        scen.agents,
+      metrics:       Object.fromEntries(metrics.map(m => [m.key, parseFloat(m.curr)])),
+      vs_prev:       Object.fromEntries(metrics.map(m => [m.key, parseFloat(m.raw_delta)])),
+      conclusion:    buildConclusion(scen.id, req_text),
+      highlights:    buildHighlights(scen.id),
+      code_preview:  codeContent,
+      backtest_period: `${new Date(Date.now()-90*86400000).toISOString().slice(0,10)} ~ ${now.slice(0,10)}`,
+    }).write();
+
+    if (proj.id) {
+      proj.iteration_count = vNum;
+      proj.updated_at = now;
+      db.set(`projects.${session.project_id}`, proj).write();
     }
+
+    send({ type: 'complete', iteration_id: itId });
+    res.end();
   };
 
-  runScript().catch(() => { if (!aborted) res.end(); });
+  run().catch(err => {
+    console.error('Agent stream error:', err);
+    if (!aborted) { send({ type: 'error', message: err.message }); res.end(); }
+  });
 });
+
+// ── Code generation helpers ──────────────────────────────────
+
+function buildIterationCode(scenarioId, proj, requirement) {
+  const base = {
+    1: `import papermill as pm\nimport mlflow\n\nmlflow.set_tracking_uri("http://central:5000")\n\nwith mlflow.start_run(run_name="baseline_init"):\n    mlflow.log_param("scenario", "initial_modeling")\n    mlflow.log_param("requirement", "${requirement.slice(0,60)}")\n\n    pm.execute_notebook(\n        "notebooks/${proj.id || 'project'}/baseline.ipynb",\n        "outputs/baseline_output.ipynb",\n        parameters={\n            "data_path": "data/train.csv",\n            "model_type": "xgboost",\n            "n_estimators": 200,\n            "max_depth": 6,\n            "backtest_start": "2024-10-01"\n        }\n    )\n    # Metrics logged inside notebook via mlflow.log_metric()`,
+    2: `import pandas as pd\nimport mlflow\nfrom analysis import MultiDimErrorAnalyzer\n\nmlflow.set_tracking_uri("http://central:5000")\n\nwith mlflow.start_run(run_name="iter_optimize_analysis"):\n    analyzer = MultiDimErrorAnalyzer(\n        model_path="models/current_best.pkl",\n        data_path="data/validation.csv"\n    )\n    report = analyzer.run(\n        dimensions=["category","time","channel"],\n        top_k=10\n    )\n    mlflow.log_dict(report.to_dict(), "error_analysis.json")\n    print(report.summary())`,
+    3: `import mlflow\nfrom ops_review import OpsReviewPipeline\n\nwith mlflow.start_run(run_name="ops_review_${new Date().toISOString().slice(0,10)}"):\n    pipeline = OpsReviewPipeline(\n        project_id="${proj.id || 'proj'}",\n        review_days=30\n    )\n    anomalies = pipeline.detect_anomalies(threshold_mape=15.0)\n    root_causes = pipeline.root_cause_analysis(anomalies)\n    pipeline.save_report("outputs/ops_review.json")\n    print(f"发现 {len(anomalies)} 个异常，{len(root_causes)} 个根因")`,
+    4: `import papermill as pm\nimport mlflow\n\n# 业务方需求: ${requirement.slice(0,60)}\nwith mlflow.start_run(run_name="business_driven_opt"):\n    pm.execute_notebook(\n        "notebooks/${proj.id || 'project'}/optimization.ipynb",\n        "outputs/opt_output.ipynb",\n        parameters={\n            "requirement": "${requirement.slice(0,60)}",\n            "focus_metric": "mape",\n            "target_threshold": 0.10,\n            "backtest_start": "2024-10-01"\n        }\n    )`,
+    5: `import pandas as pd\nimport mlflow\nfrom data_analysis import BusinessQAAnalyzer\n\n# 业务问题: ${requirement.slice(0,60)}\nwith mlflow.start_run(run_name="business_qa"):\n    analyzer = BusinessQAAnalyzer()\n    result = analyzer.investigate(\n        question="${requirement.slice(0,80)}",\n        data_path="data/production_logs.csv",\n        time_range=("2025-01-01", "2025-04-07")\n    )\n    result.to_html("outputs/qa_report.html")\n    print(result.executive_summary())`,
+    6: `import mlflow\nfrom monitoring import MonitoringDashboard\n\ndashboard = MonitoringDashboard(\n    project_id="${proj.id || 'proj'}",\n    tracking_uri="http://central:5000"\n)\nkpis = dashboard.compute_kpis(days=30)\ndashboard.check_alerts(kpis, rules={\n    "overall_mape": {"warn": 10, "alert": 15},\n    "stability_index": {"warn": 0.75, "alert": 0.70},\n})\ndashboard.export_report("outputs/monitoring_report.json")\nprint(kpis)`,
+  };
+  return base[scenarioId] || `# ${requirement}\nprint("执行完成")`;
+}
+
+function generateMockExecOutput(scenarioId, proj) {
+  const base = [
+    '[INFO] Jupyter kernel connected (python3)',
+    '[INFO] 代码注入完成，开始执行...',
+  ];
+  const byScenario = {
+    1: ['[INFO] 数据加载: 180,420 行 × 47 列','[INFO] 缺失值处理完成','[INFO] 特征工程: 生成 89 个特征','[INFO] 模型训练中... 轮次 50/200','[INFO] 模型训练中... 轮次 100/200','[INFO] Early stopping at round 187','[INFO] 回测验证: 2024-10-01 ~ 2024-12-31','[METRIC] MAPE: 18.47%','[METRIC] MAE: 578.3','[INFO] 模型已保存至 models/baseline.pkl'],
+    2: ['[INFO] 加载验证集数据...','[INFO] 误差分布分析: 按品类','[INFO] 误差分布分析: 按时间维度','[INFO] SHAP 特征重要性计算中...','[INFO] Top 异常品类: 鲜食(31.2%), 电子配件(28.7%)','[INFO] 优化机会识别完成','[METRIC] 改善空间预估: -8.5% MAPE'],
+    3: ['[INFO] 拉取近30天运行日志...','[INFO] 异常检测: PSI = 0.18 (预警)','[INFO] 发现 7 个品类 MAPE 异常','[INFO] 根因分析: 营销活动未同步','[INFO] 根因分析: 外部趋势突变','[METRIC] 整体 MAPE 漂移: +2.3pp','[INFO] 改善方案已生成'],
+    4: ['[INFO] 解析业务需求...','[INFO] 数据探索: 大促期间数据专项分析','[INFO] 大促分期建模: 预热/爆发/余震','[INFO] CatBoost 训练中...','[INFO] Early stopping at round 1840','[METRIC] 大促期 MAPE: 20.6% (改善 45%)','[METRIC] 整体 MAPE: 8.8%'],
+    5: ['[INFO] 解析业务问题...','[INFO] 拉取相关数据片段...','[INFO] 渠道分布分析...','[INFO] 用户行为对比分析...','[INFO] 根因定位: 新渠道用户行为差异','[INFO] 影响量化完成','[METRIC] 新渠道预测偏差: 28.7%'],
+    6: ['[INFO] 计算 KPI 指标...','[INFO] MAPE 趋势: 30天数据','[INFO] 品类精度明细计算...','[INFO] 告警规则检查...','[METRIC] 整体 MAPE: 7.8%','[WARN] 健身器材品类 MAPE: 24.1% (黄色预警)','[INFO] 监控报告已生成'],
+  };
+  return [...base, ...(byScenario[scenarioId] || ['[INFO] 执行完成'])];
+}
+
+function buildResultSummary(scenarioId, proj) {
+  const templates = {
+    1: { summary: '**基线模型建立完成。** XGBoost 在验证集上达到 MAPE 18.5%，略高于业务目标 15%，特征工程和外部数据接入是主要优化方向。',
+         metrics: [{name:'MAPE',key:'mape',prev:'—',curr:'18.5%',delta:'🆕 基线',raw_delta:0},{name:'MAE',key:'mae',prev:'—',curr:'578.3',delta:'🆕 基线',raw_delta:0}] },
+    2: { summary: '**多维度误差分析完成。** 识别出 5 个高误差品类，促销特征二值化是主要信息损失点，引入外部数据预期改善 MAPE 约 6-8%。',
+         metrics: [{name:'预估改善',key:'improvement',prev:'0%',curr:'-7.5%',delta:'⬆️ 潜力',raw_delta:-7.5},{name:'异常品类数',key:'anomaly_count',prev:'—',curr:'5',delta:'已识别',raw_delta:0}] },
+    3: { summary: '**运营复盘完成。** 近30天 MAPE 从 10.1% 漂移至 12.4%，主要根因为营销活动数据未同步（贡献55%）和社交热点突变（贡献30%）。',
+         metrics: [{name:'MAPE漂移',key:'mape',prev:'10.1%',curr:'12.4%',delta:'⚠️ +2.3pp',raw_delta:2.3},{name:'根因数',key:'root_causes',prev:'—',curr:'3',delta:'已定位',raw_delta:0}] },
+    4: { summary: '**业务驱动优化完成。** 针对大促期间预测精度优化，引入分期建模后大促 MAPE 从 37.2% 降至 20.6%，达成业务目标（≤20%）。',
+         metrics: [{name:'大促MAPE',key:'mape',prev:'37.2%',curr:'20.6%',delta:'✅ -45%',raw_delta:-16.6},{name:'整体MAPE',key:'overall_mape',prev:'9.2%',curr:'8.8%',delta:'⬇️ -0.4pp',raw_delta:-0.4}] },
+    5: { summary: '**业务问题分析完成。** 补货偏低根因明确：抖音/小红书新渠道引入行为差异显著的用户群，导致模型对新用户需求系统性低估。',
+         metrics: [{name:'新渠道偏差',key:'new_channel_bias',prev:'—',curr:'28.7%',delta:'已量化',raw_delta:0},{name:'影响SKU数',key:'affected_sku',prev:'—',curr:'23',delta:'已定位',raw_delta:0}] },
+    6: { summary: '**监控大盘更新完成。** 整体健康度良好，发现1个红色告警（健身器材品类）、2个黄色预警（电子配件、服装鞋帽）。',
+         metrics: [{name:'整体MAPE',key:'mape',prev:'7.9%',curr:'7.8%',delta:'✅ -0.1pp',raw_delta:-0.1},{name:'告警数',key:'alerts',prev:'0',curr:'1',delta:'⚠️ 新增',raw_delta:1}] },
+  };
+  return templates[scenarioId] || { summary: '执行完成', metrics: [] };
+}
+
+function buildConclusion(scenarioId, requirement) {
+  const c = {
+    1: '基线模型已建立，MAPE 18.5%，建议优先引入促销精细化特征和天气数据，进入场景2开展多维优化分析。',
+    2: '已识别 3 个高优先级优化方向，预期改善 MAPE 约 6-8%，阶段一工作可立即启动。',
+    3: '根因已定位（营销活动同步缺失 + 社交热点感知缺失），建议本周内接入活动日历接口，中期迭代引入热搜指数特征。',
+    4: '大促感知模型达成业务目标（MAPE ≤20%），建议按计划在618前2周完成灰度验证和线上监控配置。',
+    5: '根因明确，非模型故障而是真实需求结构变化。建议立即上调受影响SKU安全库存系数，中期迭代接入渠道特征。',
+    6: '整体预测健康度良好，健身器材品类异常已有根因解释（KOL事件），已采取临时措施，建议纳入社交热点事件库。',
+  };
+  return c[scenarioId] || requirement;
+}
+
+function buildHighlights(scenarioId) {
+  const h = {
+    1: ['完成数据探索和 EDA','建立 XGBoost 基线模型','识别关键特征：节假日、促销活动','输出回测报告'],
+    2: ['多维误差分布分析','识别高误差品类 Top5','量化特征信息损失','制定 3 阶段优化计划'],
+    3: ['自动检测 7 个 MAPE 异常品类','根因定位 3 条（含贡献度量化）','制定紧急和中期改善方案'],
+    4: ['大促分期特征工程','CatBoost 大促专属模型','6次历史大促回测验证','达成业务目标 MAPE ≤20%'],
+    5: ['渠道来源分布对比分析','新老用户行为特征差距量化','竞品库存溢出效应识别','制定短期应急和中期迭代方案'],
+    6: ['30天 MAPE 趋势图更新','品类精度明细更新','健康告警规则检查','异常品类根因联动分析'],
+  };
+  return h[scenarioId] || ['Agent 自动执行完成'];
+}
 
 // GET /api/monitoring/:project_id — scenario-6 style monitoring data
 app.get('/api/monitoring/:project_id', (req, res) => {
