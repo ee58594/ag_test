@@ -3,164 +3,266 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF 翻译 · PDFTranslate</title>
-  <link rel="canonical" href="https://ee58594.github.io/ag_test/" />
-  <meta name="description" content="PDF 文件智能翻译 — 上传 PDF，选择目标语言，一键获得高质量译文。支持 10+ 种语言，保留原版式排版。" />
-  <meta property="og:title" content="PDFTranslate — PDF 翻译网站" />
-  <meta property="og:description" content="上传 PDF，选择目标语言，一键获得高质量译文。支持中/英/日/韩/法/德等 10+ 种语言。" />
-  <meta property="og:url" content="https://ee58594.github.io/ag_test/" />
-  <meta property="og:type" content="website" />
+  <title>AlgoManager · 算法项目智能管理平台</title>
+  <meta name="description" content="基于大模型能力的算法项目全生命周期管理平台，支持多 Agent 协作、迭代管理与智能分析。" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- ── Header ── -->
-  <header class="header">
-    <div class="header-inner">
-      <div class="logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#4F46E5"/>
-          <path d="M8 8h10a6 6 0 0 1 0 12H8V8z" fill="#fff" opacity=".9"/>
-          <path d="M8 22h12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-          <path d="M20 26l4-4-4-4" stroke="#A5F3FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIDEBAR
+═══════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="7" fill="#6366F1"/>
+          <path d="M6 14h4l3-6 4 12 3-8 3 2h3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>PDFTranslate</span>
       </div>
-      <nav class="nav">
-        <a href="#">功能</a>
-        <a href="#">价格</a>
-        <a href="#">帮助</a>
-      </nav>
+      <span class="brand-name">AlgoManager</span>
+    </div>
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="收起侧边栏">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 2L5 8l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">概览</div>
+    <a class="nav-item active" data-view="dashboard" href="#">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/></svg>
+      <span>总览大盘</span>
+    </a>
+
+    <div class="nav-section-label">项目</div>
+    <a class="nav-item" data-view="projects" href="#">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 3V2a1 1 0 011-1h4a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>项目列表</span>
+    </a>
+    <a class="nav-item" data-view="iterations" href="#">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 1 0 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 2l-2 2 2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>迭代历史</span>
+    </a>
+
+    <div class="nav-section-label">Agent 场景</div>
+    <a class="nav-item scenario-nav" data-scenario="1" data-view="scenario" href="#">
+      <span class="scenario-icon">🚀</span><span>初始建模</span>
+    </a>
+    <a class="nav-item scenario-nav" data-scenario="2" data-view="scenario" href="#">
+      <span class="scenario-icon">📊</span><span>迭代优化分析</span>
+    </a>
+    <a class="nav-item scenario-nav" data-scenario="3" data-view="scenario" href="#">
+      <span class="scenario-icon">🔍</span><span>运营复盘</span>
+    </a>
+    <a class="nav-item scenario-nav" data-scenario="4" data-view="scenario" href="#">
+      <span class="scenario-icon">💼</span><span>业务驱动优化</span>
+    </a>
+    <a class="nav-item scenario-nav" data-scenario="5" data-view="scenario" href="#">
+      <span class="scenario-icon">❓</span><span>业务问题分析</span>
+    </a>
+    <a class="nav-item scenario-nav" data-scenario="6" data-view="scenario" href="#">
+      <span class="scenario-icon">📈</span><span>监控大盘</span>
+    </a>
+  </nav>
+
+  <!-- Project picker (shown in sidebar) -->
+  <div class="sidebar-project">
+    <div class="sidebar-project-label">当前项目</div>
+    <select id="sidebarProjectPicker" class="project-picker-select">
+      <option value="">加载中...</option>
+    </select>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+═══════════════════════════════════════════════════════════ -->
+<div class="layout-main" id="layoutMain">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <button class="topbar-menu-btn" id="topbarMenuBtn" aria-label="展开侧边栏">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <h1 class="topbar-title" id="topbarTitle">总览大盘</h1>
+    <div class="topbar-actions">
+      <button class="btn-outline btn-sm" id="btnNewProject">+ 新建项目</button>
     </div>
   </header>
 
-  <!-- ── Hero ── -->
-  <section class="hero">
-    <h1>PDF 文件智能翻译</h1>
-    <p class="hero-sub">上传 PDF，选择目标语言，保留原始排版，一键获得高质量译文。</p>
+  <!-- ── VIEW: Dashboard ── -->
+  <section class="view" id="view-dashboard">
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="dash-row">
+      <div class="panel flex-2" id="panelIterChart">
+        <div class="panel-header">
+          <span class="panel-title">各场景迭代分布</span>
+        </div>
+        <div class="panel-body">
+          <div id="scenarioChart" style="height:220px;width:100%"></div>
+        </div>
+      </div>
+      <div class="panel flex-1" id="panelRecentIter">
+        <div class="panel-header"><span class="panel-title">近期迭代</span></div>
+        <div class="panel-body" id="recentIterList"></div>
+      </div>
+    </div>
   </section>
 
-  <!-- ── Main Card ── -->
-  <main class="main">
-    <div class="card" id="uploadCard">
+  <!-- ── VIEW: Projects ── -->
+  <section class="view hidden" id="view-projects">
+    <div class="project-grid" id="projectGrid"></div>
+  </section>
 
-      <!-- Step 1: Upload -->
-      <div class="step" id="stepUpload">
-        <div class="lang-row">
-          <div class="lang-group">
-            <label for="sourceLang">原文语言</label>
-            <select id="sourceLang"></select>
-          </div>
-          <div class="arrow-icon" aria-hidden="true">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M5 12h14M13 6l6 6-6 6" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="lang-group">
-            <label for="targetLang">目标语言</label>
-            <select id="targetLang"></select>
-          </div>
-        </div>
-
-        <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="点击或拖拽上传 PDF 文件">
-          <div class="drop-icon">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-              <rect width="48" height="48" rx="12" fill="#EEF2FF"/>
-              <path d="M24 30V18M24 18l-5 5M24 18l5 5" stroke="#4F46E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="10" y="34" width="28" height="4" rx="2" fill="#C7D2FE"/>
-            </svg>
-          </div>
-          <p class="drop-title">拖拽 PDF 文件到此处</p>
-          <p class="drop-sub">或 <span class="link">点击选择文件</span>（最大 50 MB）</p>
-          <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
-        </div>
-
-        <p class="file-info" id="fileInfo" hidden></p>
-
-        <button class="btn-primary" id="translateBtn" disabled>开始翻译</button>
-      </div>
-
-      <!-- Step 2: Progress -->
-      <div class="step hidden" id="stepProgress">
-        <div class="progress-header">
-          <span id="progressTitle">正在翻译…</span>
-          <span id="progressPercent">0%</span>
-        </div>
-        <div class="progress-bar-wrap">
-          <div class="progress-bar" id="progressBar"></div>
-        </div>
-
-        <ul class="pipeline" id="pipeline">
-          <li class="pipeline-item" data-step="1">
-            <span class="pipeline-dot"></span>
-            <span class="pipeline-label">解析PDF文档</span>
-            <span class="pipeline-status"></span>
-          </li>
-          <li class="pipeline-item" data-step="2">
-            <span class="pipeline-dot"></span>
-            <span class="pipeline-label">提取文本内容</span>
-            <span class="pipeline-status"></span>
-          </li>
-          <li class="pipeline-item" data-step="3">
-            <span class="pipeline-dot"></span>
-            <span class="pipeline-label">调用翻译引擎</span>
-            <span class="pipeline-status"></span>
-          </li>
-          <li class="pipeline-item" data-step="4">
-            <span class="pipeline-dot"></span>
-            <span class="pipeline-label">重排版与生成PDF</span>
-            <span class="pipeline-status"></span>
-          </li>
-        </ul>
-      </div>
-
-      <!-- Step 3: Done -->
-      <div class="step hidden" id="stepDone">
-        <div class="done-icon" aria-hidden="true">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-            <circle cx="32" cy="32" r="32" fill="#D1FAE5"/>
-            <path d="M20 32l9 9 15-15" stroke="#059669" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <h2 class="done-title">翻译完成！</h2>
-        <p class="done-sub" id="doneSub"></p>
-        <a class="btn-primary" id="downloadBtn" href="#" download>下载译文 PDF</a>
-        <button class="btn-ghost" id="translateAgain">再翻译一个</button>
-      </div>
-
-      <!-- Error banner -->
-      <div class="error-banner hidden" id="errorBanner" role="alert">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <circle cx="10" cy="10" r="10" fill="#FEE2E2"/>
-          <path d="M10 6v4M10 14h.01" stroke="#EF4444" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <span id="errorMsg"></span>
-      </div>
-
+  <!-- ── VIEW: Iterations ── -->
+  <section class="view hidden" id="view-iterations">
+    <div class="iter-filters">
+      <select id="filterProject" class="filter-select">
+        <option value="">全部项目</option>
+      </select>
+      <select id="filterScenario" class="filter-select">
+        <option value="">全部场景</option>
+        <option value="1">🚀 初始建模</option>
+        <option value="2">📊 迭代优化分析</option>
+        <option value="3">🔍 运营复盘</option>
+        <option value="4">💼 业务驱动优化</option>
+        <option value="5">❓ 业务问题分析</option>
+        <option value="6">📈 监控大盘</option>
+      </select>
     </div>
+    <div id="iterationsTable"></div>
+  </section>
 
-    <!-- Feature chips -->
-    <div class="features">
-      <div class="feature-chip">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 1l2.09 5.26L17 7.27l-4 3.9.94 5.49L9 14l-4.94 2.66.94-5.49-4-3.9 5.91-1.01L9 1z" fill="#FCD34D"/></svg>
-        保留原版式排版
+  <!-- ── VIEW: Project Detail ── -->
+  <section class="view hidden" id="view-project-detail">
+    <div class="project-detail-header">
+      <button class="btn-ghost btn-sm back-btn" id="btnBackToProjects">← 返回项目列表</button>
+    </div>
+    <div id="projectDetailContent"></div>
+  </section>
+
+  <!-- ── VIEW: Iteration Detail ── -->
+  <section class="view hidden" id="view-iteration-detail">
+    <div class="project-detail-header">
+      <button class="btn-ghost btn-sm back-btn" id="btnBackToIterations">← 返回迭代列表</button>
+    </div>
+    <div id="iterationDetailContent"></div>
+  </section>
+
+  <!-- ── VIEW: Scenario (Agent Run) ── -->
+  <section class="view hidden" id="view-scenario">
+    <div class="scenario-layout">
+      <!-- Left: Config panel -->
+      <div class="scenario-config" id="scenarioConfig">
+        <div class="scenario-hero" id="scenarioHero">
+          <div class="scenario-hero-icon" id="scenarioHeroIcon"></div>
+          <div>
+            <div class="scenario-hero-name" id="scenarioHeroName"></div>
+            <div class="scenario-hero-desc" id="scenarioHeroDesc"></div>
+          </div>
+        </div>
+
+        <div class="config-section">
+          <label class="config-label">选择项目</label>
+          <select id="agentProjectPicker" class="config-select"></select>
+        </div>
+
+        <div class="config-section" id="agentConfigExtra"></div>
+
+        <div class="config-section">
+          <div class="agent-roster" id="agentRoster"></div>
+        </div>
+
+        <button class="btn-primary btn-run" id="btnRunAgent" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2l10 6-10 6V2z" fill="currentColor"/></svg>
+          启动 Agent 分析
+        </button>
       </div>
-      <div class="feature-chip">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="8" stroke="#34D399" stroke-width="2"/><path d="M6 9l2 2 4-4" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        10+ 种语言互译
-      </div>
-      <div class="feature-chip">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="1" y="1" width="16" height="16" rx="4" stroke="#818CF8" stroke-width="2"/><path d="M5 9h8M9 5v8" stroke="#818CF8" stroke-width="2" stroke-linecap="round"/></svg>
-        最大支持 50 MB
+
+      <!-- Right: Streaming dialogue -->
+      <div class="scenario-stream" id="scenarioStream">
+        <div class="stream-placeholder" id="streamPlaceholder">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="30" stroke="#E0E7FF" stroke-width="2"/><path d="M20 32h8l4-8 4 16 4-10 4 2" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p>配置并启动 Agent，多角色协作分析将在此处实时展示</p>
+        </div>
+        <div class="stream-messages hidden" id="streamMessages"></div>
+        <div class="stream-done hidden" id="streamDone">
+          <div class="done-badge">✅ 分析完成</div>
+          <p class="done-note" id="streamDoneNote"></p>
+          <button class="btn-outline btn-sm" id="btnViewNewIter">查看本次迭代记录</button>
+        </div>
       </div>
     </div>
-  </main>
+  </section>
 
-  <footer class="footer">
-    <p>© 2025 PDFTranslate · 后端为模拟演示服务 ·
-      <a href="https://github.com/ee58594/ag_test" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
-    </p>
-  </footer>
+  <!-- ── VIEW: Monitoring (Scenario 6 special) ── -->
+  <section class="view hidden" id="view-monitoring">
+    <div id="monitoringContent"></div>
+  </section>
 
-  <script src="app.js"></script>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: New Project
+═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal" id="modalNewProject">
+    <div class="modal-header">
+      <span class="modal-title">新建算法项目</span>
+      <button class="modal-close" id="modalClose" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="form-label">项目名称 <span class="required">*</span></label>
+      <input type="text" id="inputProjectName" class="form-input" placeholder="例：用户购买意向预测" maxlength="60" />
+
+      <label class="form-label">项目描述</label>
+      <textarea id="inputProjectDesc" class="form-input form-textarea" placeholder="简要描述项目目标和数据背景" rows="3"></textarea>
+
+      <label class="form-label">预测类型</label>
+      <select id="inputProjectType" class="form-input">
+        <option value="timeseries">时序预测</option>
+        <option value="classification">分类预测</option>
+        <option value="regression">回归预测</option>
+        <option value="optimization">策略优化</option>
+        <option value="anomaly">异常检测</option>
+      </select>
+
+      <label class="form-label">标签（逗号分隔）</label>
+      <input type="text" id="inputProjectTags" class="form-input" placeholder="例：销量预测, 时序, SKU" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" id="btnModalCancel">取消</button>
+      <button class="btn-primary" id="btnModalCreate">创建项目</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════════════════ -->
+<!-- Apache ECharts 5 — rich interactive charts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"
+        onerror="console.warn('ECharts CDN failed')"></script>
+
+<!-- marked — production-grade Markdown parser (MIT) -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"
+        onerror="console.warn('marked CDN failed')"></script>
+
+<!-- highlight.js — syntax highlighting for 190+ languages (BSD-3) -->
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"
+        onerror="console.warn('highlight.js CDN failed')"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+
+<!-- DOMPurify — XSS sanitiser for untrusted HTML (Apache-2.0) -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"
+        onerror="console.warn('DOMPurify CDN failed')"></script>
+
+<script src="app.js"></script>
 </body>
 </html>
